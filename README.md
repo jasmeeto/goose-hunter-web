@@ -1,6 +1,6 @@
 # Goose Pursuit
 
-A browser port of the original Goose Hunter Android game (2013). Catch geese before they fly off screen — don't let too many escape!
+A browser port of the original Goose Pursuit Android game I made in 2013. Catch geese before they fly off screen — don't let too many escape!
 
 ## How to Play
 
