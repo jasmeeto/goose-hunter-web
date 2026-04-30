@@ -105,8 +105,8 @@ let pauseDelayStart = -1;
 
 let lastTimestamp = 0;
 
-// Pending click in canvas coords
-let pendingClick = null;
+// Queue of taps in canvas coords (drained each physics frame)
+let pendingClicks = [];
 
 // ── Input ─────────────────────────────────────────────────────────────────────
 function canvasCoords(point) {
@@ -119,20 +119,21 @@ function canvasCoords(point) {
   };
 }
 
-canvas.addEventListener('click', e => {
-  if (state === 'RUNNING') pendingClick = canvasCoords(e);
-});
-canvas.addEventListener('touchstart', e => {
+canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
-  if (state === 'RUNNING' && e.changedTouches.length > 0)
-    pendingClick = canvasCoords(e.changedTouches[0]);
-}, { passive: false });
+  if (state === 'RUNNING') pendingClicks.push(canvasCoords(e));
+});
 
-oBtn.addEventListener('click',      () => { if (state === 'MENU') startGame(); if (state === 'PAUSED') resumeGame(); });
-oBtn.addEventListener('touchstart', e  => { e.preventDefault(); if (state === 'MENU') startGame(); if (state === 'PAUSED') resumeGame(); }, { passive: false });
+oBtn.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (state === 'MENU')   startGame();
+  if (state === 'PAUSED') resumeGame();
+});
 
-pauseBtn.addEventListener('click',      () => pauseGame());
-pauseBtn.addEventListener('touchstart', e  => { e.preventDefault(); pauseGame(); }, { passive: false });
+pauseBtn.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (state === 'RUNNING') pauseGame();
+});
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && state === 'RUNNING') pauseGame();
@@ -166,6 +167,7 @@ function startGame() {
   pauseDelayStart = -1;
   animFrame = 0;
   lastAnimTime = 0;
+  pendingClicks.length = 0;
   lastSpawnTime = performance.now();
   spawnGoose();
   state = 'RUNNING';
@@ -173,11 +175,13 @@ function startGame() {
 }
 
 function pauseGame() {
+  pendingClicks.length = 0;
   state = 'PAUSED';
   showOverlay('Game Paused ...', 'Resume');
 }
 
 function resumeGame() {
+  pendingClicks.length = 0;
   pauseDelayStart = performance.now();
   state = 'RUNNING';
   hideOverlay();
@@ -278,6 +282,10 @@ function renderRunning(now, delta) {
     ctx.globalAlpha = 1;
   }
 
+  // ── Update physics ───────────────────────────────────────────────────────────
+  // Drain tap queue now so taps during countdown are always discarded
+  const clicks = pendingClicks.splice(0);
+
   // Pause countdown (3-2-1 overlay)
   if (pauseDelayStart !== -1) {
     const elapsed = (now - pauseDelayStart) / 1000;
@@ -288,13 +296,9 @@ function renderRunning(now, delta) {
       const f = NUM_FRAMES[frameIdx];
       ctx.drawImage(imgs.numbers, f.sx, f.sy, f.sw, f.sh,
                     LOCAL_WIDTH/2 - 50, LOCAL_HEIGHT/2 - 30, f.sw, f.sh);
-      return; // don't update physics while counting down
+      return;
     }
   }
-
-  // ── Update physics ───────────────────────────────────────────────────────────
-  const click = pendingClick;
-  pendingClick = null;
 
   // Expire dead geese
   if (hasDeadGeese && now - lastDeadTime > DEAD_MS) {
@@ -326,16 +330,20 @@ function renderRunning(now, delta) {
       redAlpha = 0;
       lives--;
       if (lives <= 0) { state = 'END'; }
-    } else if (click && inGooseRegion(click.x, click.y, g)) {
-      // Caught
-      const honk = sounds.honk;
-      if (honk) { honk.currentTime = 0; honk.play().catch(() => {}); }
-      deadGeese.push(g);
-      hasDeadGeese = true;
-      lastDeadTime = now;
-      count++;
-      toRemove.push(i);
-      click && (pendingClick = null); // consume the click
+    } else {
+      for (const click of clicks) {
+        if (inGooseRegion(click.x, click.y, g)) {
+          // Caught
+          const honk = sounds.honk;
+          if (honk) { honk.currentTime = 0; honk.play().catch(() => {}); }
+          deadGeese.push(g);
+          hasDeadGeese = true;
+          lastDeadTime = now;
+          count++;
+          toRemove.push(i);
+          break;
+        }
+      }
     }
   }
 
