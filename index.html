@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Goose Pursuit</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+
+    #canvas-wrap {
+      position: relative;
+      width: min(100vw, calc(100vh * 800 / 480));
+      height: min(100vh, calc(100vw * 480 / 800));
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: rgba(50, 50, 50, 0.92);
+      color: #fff;
+      font-family: Arial, sans-serif;
+      gap: 16px;
+    }
+
+    #overlay h1 { font-size: 2.4rem; }
+    #overlay p  { font-size: 1.4rem; }
+
+    #overlay button {
+      font-size: 1.4rem;
+      padding: 14px 40px;
+      border: none;
+      background: #555;
+      color: #fff;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-top: 12px;
+    }
+    #overlay button:hover { background: #777; }
+
+    #overlay.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="canvas-wrap">
+    <canvas id="game" width="800" height="480"></canvas>
+    <div id="overlay">
+      <h1 id="overlay-heading">Main Menu</h1>
+      <p id="overlay-count">Count: 0</p>
+      <p id="overlay-highscore">High Score: 0</p>
+      <button id="overlay-btn">Start Game</button>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
