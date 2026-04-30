@@ -29,13 +29,30 @@ class Goose {
   }
 }
 
-const canvas  = document.getElementById('game');
-const ctx     = canvas.getContext('2d');
-const overlay = document.getElementById('overlay');
-const oHead   = document.getElementById('overlay-heading');
-const oCount  = document.getElementById('overlay-count');
-const oHS     = document.getElementById('overlay-highscore');
-const oBtn    = document.getElementById('overlay-btn');
+const canvas   = document.getElementById('game');
+const ctx      = canvas.getContext('2d');
+const wrap     = document.getElementById('canvas-wrap');
+const overlay  = document.getElementById('overlay');
+const oHead    = document.getElementById('overlay-heading');
+const oCount   = document.getElementById('overlay-count');
+const oHS      = document.getElementById('overlay-highscore');
+const oBtn     = document.getElementById('overlay-btn');
+const pauseBtn = document.getElementById('pause-btn');
+
+// ── Responsive sizing ─────────────────────────────────────────────────────────
+function resize() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const aspect = LOCAL_WIDTH / LOCAL_HEIGHT;
+  let w, h;
+  if (vw / vh > aspect) { h = vh; w = h * aspect; }
+  else                   { w = vw; h = w / aspect; }
+  wrap.style.width  = w + 'px';
+  wrap.style.height = h + 'px';
+}
+window.addEventListener('resize', resize);
+// also fire on orientation change (iOS fires resize late)
+window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 // ── Assets ────────────────────────────────────────────────────────────────────
 const imgs = {};
@@ -92,15 +109,13 @@ let lastTimestamp = 0;
 let pendingClick = null;
 
 // ── Input ─────────────────────────────────────────────────────────────────────
-function canvasCoords(e) {
+function canvasCoords(point) {
   const r = canvas.getBoundingClientRect();
   const scaleX = LOCAL_WIDTH  / r.width;
   const scaleY = LOCAL_HEIGHT / r.height;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
   return {
-    x: (clientX - r.left) * scaleX,
-    y: LOCAL_HEIGHT - (clientY - r.top) * scaleY,  // flip Y to match LibGDX coords
+    x: (point.clientX - r.left) * scaleX,
+    y: LOCAL_HEIGHT - (point.clientY - r.top) * scaleY,
   };
 }
 
@@ -109,15 +124,16 @@ canvas.addEventListener('click', e => {
 });
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  if (state === 'RUNNING') pendingClick = canvasCoords(e);
+  if (state === 'RUNNING' && e.changedTouches.length > 0)
+    pendingClick = canvasCoords(e.changedTouches[0]);
 }, { passive: false });
 
-oBtn.addEventListener('click', () => {
-  if (state === 'MENU')   startGame();
-  if (state === 'PAUSED') resumeGame();
-});
+oBtn.addEventListener('click',      () => { if (state === 'MENU') startGame(); if (state === 'PAUSED') resumeGame(); });
+oBtn.addEventListener('touchstart', e  => { e.preventDefault(); if (state === 'MENU') startGame(); if (state === 'PAUSED') resumeGame(); }, { passive: false });
 
-// Pause on Escape key
+pauseBtn.addEventListener('click',      () => pauseGame());
+pauseBtn.addEventListener('touchstart', e  => { e.preventDefault(); pauseGame(); }, { passive: false });
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && state === 'RUNNING') pauseGame();
 });
@@ -129,10 +145,12 @@ function showOverlay(heading, btnText) {
   oHS.textContent    = 'High Score: ' + highScore;
   oBtn.textContent   = btnText;
   overlay.classList.remove('hidden');
+  pauseBtn.classList.remove('visible');
 }
 
 function hideOverlay() {
   overlay.classList.add('hidden');
+  pauseBtn.classList.add('visible');
 }
 
 function startGame() {
@@ -351,6 +369,7 @@ Promise.all([
   loadImg('redFrame', 'assets/red-highlight-trans.png'),
   loadAudio('honk',   'assets/goose-honk.wav'),
 ]).then(() => {
+  resize();
   showOverlay('Main Menu', 'Start Game');
   requestAnimationFrame(ts => { lastTimestamp = ts; loop(ts); });
 });
