@@ -15,8 +15,14 @@ A browser port of the original Goose Pursuit Android game I made in 2013. Catch 
 | Action | Input |
 |---|---|
 | Catch a goose | Click / tap |
-| Pause | `Escape` key |
-| Resume | Click "Resume" button |
+| Pause | `Escape` key or the on-screen **⏸ Pause** button |
+| Resume | "Resume" button |
+
+## Device Support
+
+- Fully playable on **mobile** (iOS & Android) — tap to catch geese
+- Canvas scales to fill any screen size in portrait or landscape
+- On-screen pause button for devices without a keyboard
 
 ## Running Locally
 
