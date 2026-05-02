@@ -9,6 +9,7 @@ const MAX_LIVES    = 5;
 const SPAWN_MS     = 1000;
 const DEAD_MS      = 500;
 const ANIM_MS      = 150;
+const RESUME_COUNTDOWN_MS = 3000;
 
 // Speed-up milestones: at these counts, speedX *= 1.5, speedY *= 0.8
 const TURNOVERS = { 20: true, 50: true, 100: true };
@@ -103,7 +104,6 @@ let redFadeDir = 0;   // 1 = fade in, -1 = fade out, 0 = idle
 // Pause countdown
 let pauseDelayStart = -1;
 let lastPauseTime = -1;
-let pauseDurationMs = 0;
 
 let lastTimestamp = 0;
 
@@ -264,7 +264,6 @@ function startGame() {
   redAlpha = 0; redFadeDir = 0;
   pauseDelayStart = -1;
   lastPauseTime = -1;
-  pauseDurationMs = 0;
   animFrame = 0;
   lastAnimTime = 0;
   pendingClicks.length = 0;
@@ -277,7 +276,7 @@ function startGame() {
 function pauseGame() {
   pendingClicks.length = 0;
   lastPauseTime = performance.now();
-  pauseDurationMs = 0;
+  pauseDelayStart = -1;
   state = 'PAUSED';
   showOverlay('Game Paused ...', 'Resume');
 }
@@ -291,7 +290,6 @@ function resumeGame() {
 
   pendingClicks.length = 0;
   pauseDelayStart = performance.now();
-  pauseDurationMs = pauseDelayStart - lastPauseTime;
   lastTimestamp = pauseDelayStart;
   state = 'RESUMING';
   overlay.classList.add('hidden');
@@ -301,7 +299,6 @@ function resumeGame() {
 function cancelResumeCountdown() {
   pendingClicks.length = 0;
   pauseDelayStart = -1;
-  pauseDurationMs = 0;
   lastPauseTime = performance.now();
   state = 'PAUSED';
   showOverlay('Game Paused ...', 'Resume');
@@ -408,22 +405,21 @@ function renderRunning(now, delta) {
 
   // Pause countdown (3-2-1 overlay)
   if (state === 'RESUMING') {
-    const elapsed = (now - pauseDelayStart) / 1000;
-    if (elapsed >= 3) {
-      const totalPausedMs = pauseDurationMs + (now - pauseDelayStart);
+    const rawElapsedMs = now - pauseDelayStart;
+    const elapsedMs = Number.isFinite(rawElapsedMs) ? Math.max(0, rawElapsedMs) : RESUME_COUNTDOWN_MS;
+    if (elapsedMs >= RESUME_COUNTDOWN_MS) {
       pauseDelayStart = -1;
-      pauseDurationMs = 0;
       state = 'RUNNING';
       lastTimestamp = now;
       // Keep gameplay timers from "catching up" all at once after a pause.
-      lastSpawnTime += totalPausedMs;
-      lastDeadTime += totalPausedMs;
-      lastAnimTime += totalPausedMs;
+      lastSpawnTime = now;
+      lastDeadTime = now;
+      lastAnimTime = now;
       pauseBtn.classList.add('visible');
       return;
     } else {
-      const frameIdx = Math.floor(elapsed);  // 0→"3", 1→"2", 2→"1"
-      const f = NUM_FRAMES[frameIdx];
+      const frameIdx = Math.max(0, Math.min(NUM_FRAMES.length - 1, Math.floor(elapsedMs / 1000)));  // 0→"3", 1→"2", 2→"1"
+      const f = NUM_FRAMES[frameIdx] || NUM_FRAMES[NUM_FRAMES.length - 1];
       ctx.drawImage(imgs.numbers, f.sx, f.sy, f.sw, f.sh,
                     LOCAL_WIDTH/2 - 50, LOCAL_HEIGHT/2 - 30, f.sw, f.sh);
       return;
@@ -487,14 +483,22 @@ function renderRunning(now, delta) {
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
 function loop(now) {
-  const delta = Math.min((now - lastTimestamp) / 1000, 0.1); // cap at 100ms
-  lastTimestamp = now;
+  try {
+    const delta = Math.min((now - lastTimestamp) / 1000, 0.1); // cap at 100ms
+    lastTimestamp = now;
 
-  if (state === 'RUNNING' || state === 'RESUMING') {
-    renderRunning(now, delta);
+    if (state === 'RUNNING' || state === 'RESUMING') {
+      renderRunning(now, delta);
+    }
+  } catch (err) {
+    console.error(err);
+    pendingClicks.length = 0;
+    pauseDelayStart = -1;
+    state = 'PAUSED';
+    showOverlay('Game Paused ...', 'Resume');
+  } finally {
+    requestAnimationFrame(loop);
   }
-
-  requestAnimationFrame(loop);
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
