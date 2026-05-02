@@ -102,6 +102,7 @@ let redFadeDir = 0;   // 1 = fade in, -1 = fade out, 0 = idle
 
 // Pause countdown
 let pauseDelayStart = -1;
+let lastPauseTime = -1;
 
 let lastTimestamp = 0;
 
@@ -204,6 +205,7 @@ addFastTap(canvas, handleCatchInput);
 
 addFastTap(oBtn, (_point, e) => {
   e.preventDefault();
+  e.stopPropagation();
   if (state === 'MENU') {
     startGame();
   } else if (state === 'PAUSED') {
@@ -216,11 +218,13 @@ addFastTap(oBtn, (_point, e) => {
 // tap, while the main menu still requires pressing Start Game.
 addFastTap(overlay, (_point, e) => {
   e.preventDefault();
+  e.stopPropagation();
   if (state === 'PAUSED') resumeGame();
 });
 
 addFastTap(pauseBtn, (_point, e) => {
   e.preventDefault();
+  e.stopPropagation();
   if (state === 'RUNNING') pauseGame();
 });
 
@@ -265,11 +269,18 @@ function startGame() {
 
 function pauseGame() {
   pendingClicks.length = 0;
+  lastPauseTime = performance.now();
   state = 'PAUSED';
   showOverlay('Game Paused ...', 'Resume');
 }
 
 function resumeGame() {
+  // Mobile browsers can dispatch a synthetic click after the pointer/touch that
+  // pressed Pause. If the overlay appears before that click is delivered, it can
+  // land on the Resume overlay and instantly unpause. Ignore resume attempts
+  // from that same tap.
+  if (lastPauseTime !== -1 && performance.now() - lastPauseTime < 500) return;
+
   pendingClicks.length = 0;
   pauseDelayStart = performance.now();
   lastTimestamp = pauseDelayStart;
