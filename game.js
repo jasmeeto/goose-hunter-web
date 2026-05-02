@@ -103,6 +103,7 @@ let redFadeDir = 0;   // 1 = fade in, -1 = fade out, 0 = idle
 // Pause countdown
 let pauseDelayStart = -1;
 let lastPauseTime = -1;
+let pauseDurationMs = 0;
 
 let lastTimestamp = 0;
 
@@ -196,7 +197,11 @@ function addFastTap(el, handler) {
   // Ignore synthetic clicks right after pointer/touch/mouse down to avoid double
   // actions on Android.
   el.addEventListener('click', e => {
-    if (performance.now() - lastDirectActivationTime < 700) return;
+    if (performance.now() - lastDirectActivationTime < 700) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     handler(e, e);
   });
 }
@@ -213,19 +218,10 @@ addFastTap(oBtn, (_point, e) => {
   }
 });
 
-// On touch screens the pause overlay itself is also a Resume target. This makes
-// unpausing forgiving if the small button misses or the WebView drops a button
-// tap, while the main menu still requires pressing Start Game.
-addFastTap(overlay, (_point, e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (state === 'PAUSED') resumeGame();
-});
-
 addFastTap(pauseBtn, (_point, e) => {
   e.preventDefault();
   e.stopPropagation();
-  if (state === 'RUNNING') pauseGame();
+  if (state === 'RUNNING' && !isResumeCountdownActive()) pauseGame();
 });
 
 document.addEventListener('keydown', e => {
@@ -258,6 +254,8 @@ function startGame() {
   hasDeadGeese = false;
   redAlpha = 0; redFadeDir = 0;
   pauseDelayStart = -1;
+  lastPauseTime = -1;
+  pauseDurationMs = 0;
   animFrame = 0;
   lastAnimTime = 0;
   pendingClicks.length = 0;
@@ -270,6 +268,7 @@ function startGame() {
 function pauseGame() {
   pendingClicks.length = 0;
   lastPauseTime = performance.now();
+  pauseDurationMs = 0;
   state = 'PAUSED';
   showOverlay('Game Paused ...', 'Resume');
 }
@@ -283,9 +282,11 @@ function resumeGame() {
 
   pendingClicks.length = 0;
   pauseDelayStart = performance.now();
+  pauseDurationMs = pauseDelayStart - lastPauseTime;
   lastTimestamp = pauseDelayStart;
   state = 'RUNNING';
-  hideOverlay();
+  overlay.classList.add('hidden');
+  pauseBtn.classList.remove('visible');
 }
 
 function endGame() {
@@ -391,7 +392,14 @@ function renderRunning(now, delta) {
   if (pauseDelayStart !== -1) {
     const elapsed = (now - pauseDelayStart) / 1000;
     if (elapsed >= 3) {
+      const totalPausedMs = pauseDurationMs + (now - pauseDelayStart);
       pauseDelayStart = -1;
+      pauseDurationMs = 0;
+      // Keep gameplay timers from "catching up" all at once after a pause.
+      lastSpawnTime += totalPausedMs;
+      lastDeadTime += totalPausedMs;
+      lastAnimTime += totalPausedMs;
+      pauseBtn.classList.add('visible');
     } else {
       const frameIdx = Math.floor(elapsed);  // 0→"3", 1→"2", 2→"1"
       const f = NUM_FRAMES[frameIdx];
