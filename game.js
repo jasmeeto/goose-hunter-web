@@ -77,7 +77,7 @@ function loadAudio(key, src) {
 }
 
 // ── Game state ────────────────────────────────────────────────────────────────
-let state = 'MENU';   // MENU | RUNNING | PAUSED | END
+let state = 'MENU';   // MENU | RUNNING | PAUSED | RESUMING | END
 let count = 0;
 let lives = MAX_LIVES;
 let highScore = parseInt(localStorage.getItem('highScore') || '0', 10);
@@ -221,11 +221,20 @@ addFastTap(oBtn, (_point, e) => {
 addFastTap(pauseBtn, (_point, e) => {
   e.preventDefault();
   e.stopPropagation();
-  if (state === 'RUNNING' && !isResumeCountdownActive()) pauseGame();
+  if (state === 'RUNNING') {
+    pauseGame();
+  } else if (state === 'RESUMING') {
+    cancelResumeCountdown();
+  }
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && state === 'RUNNING') pauseGame();
+  if (e.key !== 'Escape') return;
+  if (state === 'RUNNING') {
+    pauseGame();
+  } else if (state === 'RESUMING') {
+    cancelResumeCountdown();
+  }
 });
 
 // ── Screen management ─────────────────────────────────────────────────────────
@@ -284,9 +293,18 @@ function resumeGame() {
   pauseDelayStart = performance.now();
   pauseDurationMs = pauseDelayStart - lastPauseTime;
   lastTimestamp = pauseDelayStart;
-  state = 'RUNNING';
+  state = 'RESUMING';
   overlay.classList.add('hidden');
-  pauseBtn.classList.remove('visible');
+  pauseBtn.classList.add('visible');
+}
+
+function cancelResumeCountdown() {
+  pendingClicks.length = 0;
+  pauseDelayStart = -1;
+  pauseDurationMs = 0;
+  lastPauseTime = performance.now();
+  state = 'PAUSED';
+  showOverlay('Game Paused ...', 'Resume');
 }
 
 function endGame() {
@@ -319,14 +337,14 @@ function inGooseRegion(cx, cy, goose) {
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderRunning(now, delta) {
   // Speed milestones
-  if (turnovers[count]) {
+  if (state === 'RUNNING' && turnovers[count]) {
     speedX *= 1.5;
     speedY *= 0.8;
     turnovers[count] = false;
   }
 
   // Animate goose sprite
-  if (now - lastAnimTime >= ANIM_MS) {
+  if (state === 'RUNNING' && now - lastAnimTime >= ANIM_MS) {
     animFrame = 1 - animFrame;
     lastAnimTime = now;
   }
@@ -389,17 +407,20 @@ function renderRunning(now, delta) {
   const clicks = pendingClicks.splice(0);
 
   // Pause countdown (3-2-1 overlay)
-  if (pauseDelayStart !== -1) {
+  if (state === 'RESUMING') {
     const elapsed = (now - pauseDelayStart) / 1000;
     if (elapsed >= 3) {
       const totalPausedMs = pauseDurationMs + (now - pauseDelayStart);
       pauseDelayStart = -1;
       pauseDurationMs = 0;
+      state = 'RUNNING';
+      lastTimestamp = now;
       // Keep gameplay timers from "catching up" all at once after a pause.
       lastSpawnTime += totalPausedMs;
       lastDeadTime += totalPausedMs;
       lastAnimTime += totalPausedMs;
       pauseBtn.classList.add('visible');
+      return;
     } else {
       const frameIdx = Math.floor(elapsed);  // 0→"3", 1→"2", 2→"1"
       const f = NUM_FRAMES[frameIdx];
@@ -469,7 +490,7 @@ function loop(now) {
   const delta = Math.min((now - lastTimestamp) / 1000, 0.1); // cap at 100ms
   lastTimestamp = now;
 
-  if (state === 'RUNNING') {
+  if (state === 'RUNNING' || state === 'RESUMING') {
     renderRunning(now, delta);
   }
 
