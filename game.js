@@ -105,7 +105,9 @@ let pauseDelayStart = -1;
 
 let lastTimestamp = 0;
 
-// Queue of taps in canvas coords (drained each physics frame)
+// Queue of taps in canvas coords (drained each physics frame).  The queue is a
+// fallback for taps that happen while the game loop is between frames; most taps
+// are handled immediately in handleCatchInput() for lower latency on phones.
 let pendingClicks = [];
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -115,22 +117,109 @@ function canvasCoords(point) {
   const scaleY = LOCAL_HEIGHT / r.height;
   return {
     x: (point.clientX - r.left) * scaleX,
-    y: LOCAL_HEIGHT - (point.clientY - r.top) * scaleY,
+    // Canvas draw coordinates are top-left based, so input coordinates must be
+    // top-left based too.  Inverting this Y value made taps only line up with a
+    // goose when it happened to be mirrored around the vertical center.
+    y: (point.clientY - r.top) * scaleY,
   };
 }
 
-canvas.addEventListener('pointerdown', e => {
+function playHonk() {
+  const honk = sounds.honk;
+  if (honk) {
+    honk.currentTime = 0;
+    honk.play().catch(() => {});
+  }
+}
+
+function catchGooseAt(x, y, now = performance.now()) {
+  for (let i = liveGeese.length - 1; i >= 0; i--) {
+    const goose = liveGeese[i];
+    if (inGooseRegion(x, y, goose)) {
+      playHonk();
+      deadGeese.push(goose);
+      hasDeadGeese = true;
+      lastDeadTime = now;
+      count++;
+      liveGeese.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function isResumeCountdownActive() {
+  return pauseDelayStart !== -1;
+}
+
+function handleCatchInput(point, event) {
+  if (event) event.preventDefault();
+  if (state !== 'RUNNING' || isResumeCountdownActive()) return;
+
+  const coords = canvasCoords(point);
+
+  // Try to catch immediately instead of waiting up to one animation frame.
+  // This makes quick Android taps feel much less laggy.
+  if (!catchGooseAt(coords.x, coords.y)) {
+    pendingClicks.push(coords);
+  }
+}
+
+function firstChangedTouch(e) {
+  return e.changedTouches && e.changedTouches.length ? e.changedTouches[0] : e;
+}
+
+function addFastTap(el, handler) {
+  let lastDirectActivationTime = 0;
+
+  if (window.PointerEvent) {
+    el.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      lastDirectActivationTime = performance.now();
+      handler(e, e);
+    }, { passive: false });
+  } else {
+    el.addEventListener('touchstart', e => {
+      lastDirectActivationTime = performance.now();
+      handler(firstChangedTouch(e), e);
+    }, { passive: false });
+
+    el.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      lastDirectActivationTime = performance.now();
+      handler(e, e);
+    });
+  }
+
+  // Click fallback for browsers/WebViews with incomplete pointer/touch support.
+  // Ignore synthetic clicks right after pointer/touch/mouse down to avoid double
+  // actions on Android.
+  el.addEventListener('click', e => {
+    if (performance.now() - lastDirectActivationTime < 700) return;
+    handler(e, e);
+  });
+}
+
+addFastTap(canvas, handleCatchInput);
+
+addFastTap(oBtn, (_point, e) => {
   e.preventDefault();
-  if (state === 'RUNNING') pendingClicks.push(canvasCoords(e));
+  if (state === 'MENU') {
+    startGame();
+  } else if (state === 'PAUSED') {
+    resumeGame();
+  }
 });
 
-oBtn.addEventListener('pointerdown', e => {
+// On touch screens the pause overlay itself is also a Resume target. This makes
+// unpausing forgiving if the small button misses or the WebView drops a button
+// tap, while the main menu still requires pressing Start Game.
+addFastTap(overlay, (_point, e) => {
   e.preventDefault();
-  if (state === 'MENU')   startGame();
   if (state === 'PAUSED') resumeGame();
 });
 
-pauseBtn.addEventListener('pointerdown', e => {
+addFastTap(pauseBtn, (_point, e) => {
   e.preventDefault();
   if (state === 'RUNNING') pauseGame();
 });
@@ -183,6 +272,7 @@ function pauseGame() {
 function resumeGame() {
   pendingClicks.length = 0;
   pauseDelayStart = performance.now();
+  lastTimestamp = pauseDelayStart;
   state = 'RUNNING';
   hideOverlay();
 }
